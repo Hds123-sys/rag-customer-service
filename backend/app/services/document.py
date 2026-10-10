@@ -1,0 +1,228 @@
+"""
+文档处理服务
+
+负责上传文件的保存、解析、元数据管理与删除。
+元数据(原始文件名、大小、上传时间、片段数)持久化在 uploads/.metadata.json。
+"""
+import hashlib
+import json
+import logging
+import threading
+import time
+from pathlib import Path
+from typing import Dict, List, Optional, Tuple
+
+import aiofiles
+import pymupdf
+
+from app.core.config import settings
+
+logger = logging.getLogger(__name__)
+
+_METADATA_FILENAME = ".metadata.json"
+
+
+class DocumentService:
+    def __init__(self):
+        self.upload_dir = settings.upload_path
+        self.upload_dir.mkdir(parents=True, exist_ok=True)
+        self._metadata_file = self.upload_dir / _METADATA_FILENAME
+        self._lock = threading.RLock()
+        self._metadata: Dict[str, dict] = self._load_metadata()
+
+    # ==================== 元数据 ====================
+    def _load_metadata(self) -> Dict[str, dict]:
+        if not self._metadata_file.exists():
+            return {}
+        try:
+            with self._metadata_file.open("r", encoding="utf-8") as fp:
+                data = json.load(fp)
+            return data if isinstance(data, dict) else {}
+        except (json.JSONDecodeError, OSError) as exc:
+            logger.warning("读取文档元数据失败: %s", exc)
+            return {}
+
+    def _save_metadata(self) -> None:
+        tmp = self._metadata_file.with_suffix(".json.tmp")
+        with tmp.open("w", encoding="utf-8") as fp:
+            json.dump(self._metadata, fp, ensure_ascii=False, indent=2)
+        tmp.replace(self._metadata_file)
+
+    def _set_record(self, doc_id: str, record: dict) -> None:
+        with self._lock:
+            self._metadata[doc_id] = record
+            self._save_metadata()
+
+    def _pop_record(self, doc_id: str) -> Optional[dict]:
+        with self._lock:
+            record = self._metadata.pop(doc_id, None)
+            if record is not None:
+                self._save_metadata()
+            return record
+
+    # ==================== 工具方法 ====================
+    @staticmethod
+    def _get_file_hash(file_content: bytes) -> str:
+        return hashlib.md5(file_content).hexdigest()
+
+    @staticmethod
+    def _get_file_extension(filename: str) -> str:
+        return Path(filename or "").suffix.lower()
+
+    @staticmethod
+    def _safe_original_name(filename: str) -> str:
+        name = Path(filename or "").name
+        return name or "unknown"
+
+    # ==================== 校验与保存 ====================
+    def validate_file(self, filename: str, file_size: int) -> Tuple[bool, Optional[str]]:
+        if not filename:
+            return False, "文件名不能为空"
+
+        extension = self._get_file_extension(filename)
+        if extension not in settings.allowed_extensions:
+            allowed = ", ".join(sorted(settings.allowed_extensions))
+            return False, f"不支持的文件格式: {extension or '(无扩展名)'}，仅支持: {allowed}"
+
+        if file_size <= 0:
+            return False, "文件内容为空"
+
+        if file_size > settings.MAX_FILE_SIZE:
+            return False, f"文件过大: {file_size / (1024 * 1024):.1f}MB，最大允许 {settings.MAX_FILE_SIZE / (1024 * 1024):.0f}MB"
+
+        return True, None
+
+    async def save_file(self, file_content: bytes, filename: str) -> Tuple[Path, str]:
+        file_hash = self._get_file_hash(file_content)
+        safe_filename = f"{file_hash}{self._get_file_extension(filename)}"
+        file_path = self.upload_dir / safe_filename
+
+        async with aiofiles.open(file_path, "wb") as fp:
+            await fp.write(file_content)
+
+        return file_path, file_hash
+
+    # ==================== 解析 ====================
+    async def parse_pdf(self, file_path: Path) -> str:
+        def _read() -> str:
+            parts = []
+            with pymupdf.open(file_path) as document:
+                for page in document:
+                    parts.append(page.get_text())
+            return "\n".join(parts)
+
+        import asyncio
+
+        return await asyncio.to_thread(_read)
+
+    async def parse_txt(self, file_path: Path) -> str:
+        for encoding in ("utf-8", "utf-8-sig", "gb18030", "latin-1"):
+            try:
+                async with aiofiles.open(file_path, "r", encoding=encoding) as fp:
+                    return await fp.read()
+            except UnicodeDecodeError:
+                continue
+        # 兜底: 忽略无法解码的字符
+        async with aiofiles.open(file_path, "r", encoding="utf-8", errors="ignore") as fp:
+            return await fp.read()
+
+    async def parse_document(self, file_path: Path, filename: str) -> str:
+        extension = self._get_file_extension(filename)
+        if extension == ".pdf":
+            text = await self.parse_pdf(file_path)
+        elif extension in (".txt", ".md"):
+            text = await self.parse_txt(file_path)
+        else:
+            raise ValueError(f"不支持的文件格式: {extension}")
+
+        if not text or not text.strip():
+            raise ValueError("文档解析结果为空，请确认文件内容")
+        return text
+
+    # ==================== 记录管理 ====================
+    def register_document(
+        self,
+        doc_id: str,
+        filename: str,
+        size: int,
+        file_path: Path,
+        chunks: int,
+        status: str = "processed",
+    ) -> dict:
+        stat = file_path.stat()
+        record = {
+            "id": doc_id,
+            "filename": self._safe_original_name(filename),
+            "size": size,
+            "file_type": self._get_file_extension(filename).lstrip("."),
+            "stored_name": file_path.name,
+            "created_at": stat.st_ctime,
+            "modified_at": stat.st_mtime,
+            "chunks": chunks,
+            "status": status,
+        }
+        self._set_record(doc_id, record)
+        return record
+
+    def list_documents(self) -> List[dict]:
+        with self._lock:
+            records = list(self._metadata.values())
+        records.sort(key=lambda item: item.get("created_at", 0), reverse=True)
+        return records
+
+    def get_document(self, doc_id: str) -> Optional[dict]:
+        with self._lock:
+            return self._metadata.get(doc_id)
+
+    def count(self) -> int:
+        with self._lock:
+            return len(self._metadata)
+
+    async def delete_file(self, doc_id: str) -> bool:
+        record = self.get_document(doc_id)
+        candidates = []
+        if record and record.get("stored_name"):
+            candidates.append(self.upload_dir / record["stored_name"])
+        candidates.extend(self.upload_dir.glob(f"{doc_id}.*"))
+
+        deleted = False
+        for file_path in candidates:
+            try:
+                if file_path.is_file() and file_path.name != _METADATA_FILENAME:
+                    file_path.unlink()
+                    deleted = True
+            except OSError as exc:
+                logger.warning("删除文件失败 %s: %s", file_path, exc)
+        return deleted
+
+    async def remove_document(self, doc_id: str) -> bool:
+        """删除文件与元数据记录"""
+        existed = self.get_document(doc_id) is not None
+        await self.delete_file(doc_id)
+        self._pop_record(doc_id)
+        return existed
+
+    async def clear_all(self) -> None:
+        import shutil
+
+        with self._lock:
+            self._metadata = {}
+            for file_path in list(self.upload_dir.iterdir()):
+                if file_path.name == _METADATA_FILENAME:
+                    continue
+                try:
+                    if file_path.is_dir():
+                        shutil.rmtree(file_path, ignore_errors=True)
+                    else:
+                        file_path.unlink()
+                except OSError as exc:
+                    logger.warning("清理文件失败 %s: %s", file_path, exc)
+            self._save_metadata()
+
+    def touch(self) -> None:
+        """确保上传目录存在"""
+        self.upload_dir.mkdir(parents=True, exist_ok=True)
+
+
+# 全局文档服务实例
+document_service = DocumentService()

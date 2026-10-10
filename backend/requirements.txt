@@ -1,0 +1,16 @@
+# 后端依赖
+# 说明: 使用兼容的版本下限, 便于在 Python 3.11+ (含 3.13/3.14) 上安装。
+fastapi>=0.115
+uvicorn[standard]>=0.30
+python-multipart>=0.0.9
+pydantic>=2.7
+pydantic-settings>=2.3
+email-validator>=2.1
+sqlalchemy>=2.0
+pymysql>=1.1
+python-jose[cryptography]>=3.3
+aiofiles>=23.2
+pymupdf>=1.24
+httpx>=0.27
+python-dotenv>=1.0
+qdrant-client>=1.9
