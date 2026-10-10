@@ -2,6 +2,24 @@
 
 基于大语言模型与检索增强生成(RAG)的智能客服系统, 支持用户注册登录、文档上传管理、基于知识库的多轮智能问答, 并展示参考来源与相似度。
 
+## 界面预览
+
+| 登录 | 注册 |
+| --- | --- |
+| ![登录](docs/screenshots/01-login.jpg) | ![注册](docs/screenshots/02-register.jpg) |
+
+**智能问答** —— 混合检索出答案, 并给出参考来源与相似度
+
+![智能问答](docs/screenshots/03-chat.jpg)
+
+**引用溯源** —— 鼠标悬停来源标签即可查看原文片段, 支持一键复制
+
+![引用来源](docs/screenshots/04-source-popover.jpg)
+
+**文档管理** —— 上传 PDF / TXT / MD, 支持多选与拖拽, 文档按用户隔离
+
+![文档管理](docs/screenshots/05-documents.jpg)
+
 ## 功能特性
 
 - 用户体系: 注册 / 登录 / 退出 / 找回密码(JWT 鉴权, PBKDF2 密码哈希, 接口限流)
