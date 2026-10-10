@@ -92,9 +92,25 @@ class DocumentService:
 
         return True, None
 
-    async def save_file(self, file_content: bytes, filename: str) -> Tuple[Path, str]:
+    @staticmethod
+    def build_document_id(owner_id: int, file_hash: str) -> str:
+        """文档 ID 由 上传用户 + 内容哈希 组成, 保证用户之间相互隔离"""
+        return f"{int(owner_id)}:{file_hash}"
+
+    async def delete_path(self, file_path: Path) -> None:
+        """删除单个文件(用于上传流程失败时回滚)"""
+        try:
+            if file_path.is_file() and file_path.name != _METADATA_FILENAME:
+                file_path.unlink()
+        except OSError as exc:
+            logger.warning("删除文件失败 %s: %s", file_path, exc)
+
+    async def save_file(
+        self, file_content: bytes, filename: str, owner_id: int
+    ) -> Tuple[Path, str]:
         file_hash = self._get_file_hash(file_content)
-        safe_filename = f"{file_hash}{self._get_file_extension(filename)}"
+        # 存储文件名同样按用户隔离, 避免不同用户互相覆盖
+        safe_filename = f"{int(owner_id)}_{file_hash}{self._get_file_extension(filename)}"
         file_path = self.upload_dir / safe_filename
 
         async with aiofiles.open(file_path, "wb") as fp:
@@ -143,6 +159,8 @@ class DocumentService:
     def register_document(
         self,
         doc_id: str,
+        owner_id: int,
+        file_hash: str,
         filename: str,
         size: int,
         file_path: Path,
@@ -152,6 +170,8 @@ class DocumentService:
         stat = file_path.stat()
         record = {
             "id": doc_id,
+            "owner_id": int(owner_id),
+            "file_hash": file_hash,
             "filename": self._safe_original_name(filename),
             "size": size,
             "file_type": self._get_file_extension(filename).lstrip("."),
@@ -164,9 +184,12 @@ class DocumentService:
         self._set_record(doc_id, record)
         return record
 
-    def list_documents(self) -> List[dict]:
+    def list_documents(self, owner_id: int) -> List[dict]:
         with self._lock:
-            records = list(self._metadata.values())
+            records = [
+                item for item in self._metadata.values()
+                if int(item.get("owner_id", -1)) == int(owner_id)
+            ]
         records.sort(key=lambda item: item.get("created_at", 0), reverse=True)
         return records
 
@@ -174,16 +197,18 @@ class DocumentService:
         with self._lock:
             return self._metadata.get(doc_id)
 
-    def count(self) -> int:
+    def count(self, owner_id: int) -> int:
         with self._lock:
-            return len(self._metadata)
+            return sum(
+                1 for item in self._metadata.values()
+                if int(item.get("owner_id", -1)) == int(owner_id)
+            )
 
     async def delete_file(self, doc_id: str) -> bool:
         record = self.get_document(doc_id)
         candidates = []
         if record and record.get("stored_name"):
             candidates.append(self.upload_dir / record["stored_name"])
-        candidates.extend(self.upload_dir.glob(f"{doc_id}.*"))
 
         deleted = False
         for file_path in candidates:
@@ -202,18 +227,26 @@ class DocumentService:
         self._pop_record(doc_id)
         return existed
 
-    async def clear_all(self) -> None:
+    async def clear_all(self, owner_id: int) -> None:
         import shutil
 
         with self._lock:
-            self._metadata = {}
-            for file_path in list(self.upload_dir.iterdir()):
-                if file_path.name == _METADATA_FILENAME:
+            removable = [
+                (doc_id, item) for doc_id, item in self._metadata.items()
+                if int(item.get("owner_id", -1)) == int(owner_id)
+            ]
+            for doc_id, _ in removable:
+                self._metadata.pop(doc_id, None)
+
+            for _, item in removable:
+                stored_name = item.get("stored_name")
+                if not stored_name:
                     continue
+                file_path = self.upload_dir / stored_name
                 try:
                     if file_path.is_dir():
                         shutil.rmtree(file_path, ignore_errors=True)
-                    else:
+                    elif file_path.is_file():
                         file_path.unlink()
                 except OSError as exc:
                     logger.warning("清理文件失败 %s: %s", file_path, exc)

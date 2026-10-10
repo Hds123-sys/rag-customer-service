@@ -87,6 +87,15 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24
     RESET_CODE_TTL_SECONDS: int = 600
 
+    # ==================== 限流配置 ====================
+    # 规则格式: "次数/窗口秒数"; 填 "0/0" 表示不限制
+    RATE_LIMIT_ENABLED: bool = True
+    RATE_LIMIT_REGISTER: str = "30/3600"
+    RATE_LIMIT_LOGIN: str = "30/60"
+    RATE_LIMIT_RESET_REQUEST: str = "10/600"
+    RATE_LIMIT_RESET_CONFIRM: str = "20/600"
+    RATE_LIMIT_CHAT: str = "60/60"
+
     # ==================== CORS配置 ====================
     CORS_ORIGINS: str = "*"
 

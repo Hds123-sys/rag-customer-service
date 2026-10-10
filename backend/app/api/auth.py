@@ -3,12 +3,13 @@
 """
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
 from app.core.config import settings
 from app.core.database import get_db
+from app.core.ratelimit import enforce
 from app.models.schemas import (
     MessageResponse,
     PasswordResetConfirm,
@@ -28,16 +29,23 @@ router = APIRouter()
 
 
 @router.post("/register", response_model=TokenResponse, summary="用户注册")
-async def register(request: UserRegisterRequest, db: Session = Depends(get_db)):
+async def register(
+    request: UserRegisterRequest,
+    http_request: Request,
+    db: Session = Depends(get_db),
+):
+    enforce(http_request, "auth:register", settings.RATE_LIMIT_REGISTER)
+
     try:
         user = auth_service.register_user(db, request)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-    except Exception as exc:  # noqa: BLE001
+    except Exception:  # noqa: BLE001
         logger.exception("注册失败")
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"注册失败: {exc}"
-        ) from exc
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="注册失败，请稍后重试",
+        ) from None
 
     access_token = auth_service.create_access_token(
         data={"sub": str(user.id), "username": user.username}
@@ -50,14 +58,21 @@ async def register(request: UserRegisterRequest, db: Session = Depends(get_db)):
 
 
 @router.post("/login", response_model=TokenResponse, summary="用户登录")
-async def login(request: UserLoginRequest, db: Session = Depends(get_db)):
+async def login(
+    request: UserLoginRequest,
+    http_request: Request,
+    db: Session = Depends(get_db),
+):
+    enforce(http_request, "auth:login", settings.RATE_LIMIT_LOGIN, identifier=request.username)
+
     try:
         user = auth_service.authenticate_user(db, request.username, request.password)
-    except Exception as exc:  # noqa: BLE001
+    except Exception:  # noqa: BLE001
         logger.exception("登录失败")
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"登录失败: {exc}"
-        ) from exc
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="登录失败，请稍后重试",
+        ) from None
 
     if user is None:
         raise HTTPException(
@@ -86,7 +101,13 @@ async def get_current_user_info(current_user: User = Depends(get_current_user)):
 
 
 @router.post("/reset-password", response_model=PasswordResetResponse, summary="请求密码重置验证码")
-async def request_password_reset(request: PasswordResetRequest, db: Session = Depends(get_db)):
+async def request_password_reset(
+    request: PasswordResetRequest,
+    http_request: Request,
+    db: Session = Depends(get_db),
+):
+    enforce(http_request, "auth:reset", settings.RATE_LIMIT_RESET_REQUEST, identifier=request.email)
+
     user = auth_service.get_user_by_email(db, request.email)
     if user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="邮箱未注册")
@@ -102,7 +123,18 @@ async def request_password_reset(request: PasswordResetRequest, db: Session = De
 
 
 @router.post("/reset-password/confirm", response_model=MessageResponse, summary="确认重置密码")
-async def confirm_password_reset(request: PasswordResetConfirm, db: Session = Depends(get_db)):
+async def confirm_password_reset(
+    request: PasswordResetConfirm,
+    http_request: Request,
+    db: Session = Depends(get_db),
+):
+    enforce(
+        http_request,
+        "auth:reset_confirm",
+        settings.RATE_LIMIT_RESET_CONFIRM,
+        identifier=request.email,
+    )
+
     user = auth_service.get_user_by_email(db, request.email)
     if user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="邮箱未注册")

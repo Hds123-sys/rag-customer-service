@@ -82,7 +82,8 @@ async def validation_exception_handler(_request: Request, exc: RequestValidation
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(_request: Request, exc: Exception):
     logger.exception("未处理的异常: %s", exc)
-    return JSONResponse(status_code=500, content={"detail": f"服务器内部错误: {exc}"})
+    # 统一返回通用提示, 详细堆栈仅记录在服务端日志中
+    return JSONResponse(status_code=500, content={"detail": "服务器内部错误，请稍后重试"})
 
 
 # ---------------- 基础接口 ----------------
@@ -105,7 +106,8 @@ def _check_database() -> str:
         return "ok"
     except Exception as exc:  # noqa: BLE001
         logger.warning("数据库健康检查失败: %s", exc)
-        return f"error: {exc}"
+        # 只返回状态, 不把底层异常细节暴露给客户端
+        return "error"
 
 
 @app.get("/health", tags=["系统"], summary="健康检查")

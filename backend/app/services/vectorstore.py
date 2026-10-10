@@ -106,12 +106,31 @@ class LocalVectorStore:
                 self._points.pop(str(point_id), None)
             self._save()
 
-    def delete_by_file_hash(self, file_hash: str) -> None:
+    @staticmethod
+    def _owner_of(item: dict):
+        return ((item.get("payload") or {}).get("metadata") or {}).get("owner_id")
+
+    def delete_matching(self, owner_id: int, file_hash: str) -> None:
+        """删除指定用户下某个文档的全部向量片段"""
         with self._lock:
             removable = [
                 point_id
                 for point_id, item in self._points.items()
-                if ((item.get("payload") or {}).get("metadata") or {}).get("file_hash") == file_hash
+                if self._owner_of(item) == owner_id
+                and (((item.get("payload") or {}).get("metadata") or {}).get("file_hash") == file_hash)
+            ]
+            for point_id in removable:
+                self._points.pop(point_id, None)
+            if removable:
+                self._save()
+
+    def clear_owner(self, owner_id: int) -> None:
+        """清空指定用户的全部向量片段"""
+        with self._lock:
+            removable = [
+                point_id
+                for point_id, item in self._points.items()
+                if self._owner_of(item) == owner_id
             ]
             for point_id in removable:
                 self._points.pop(point_id, None)
@@ -232,14 +251,33 @@ class QdrantVectorStore:
         if ids:
             self._client.delete(collection_name=self.collection_name, points_selector=list(ids))
 
-    def delete_by_file_hash(self, file_hash: str) -> None:
+    def delete_matching(self, owner_id: int, file_hash: str) -> None:
+        """删除指定用户下某个文档的全部向量片段"""
         self._client.delete(
             collection_name=self.collection_name,
             points_selector=qmodels.Filter(
                 must=[
                     qmodels.FieldCondition(
+                        key="metadata.owner_id",
+                        match=qmodels.MatchValue(value=owner_id),
+                    ),
+                    qmodels.FieldCondition(
                         key="metadata.file_hash",
                         match=qmodels.MatchValue(value=file_hash),
+                    ),
+                ]
+            ),
+        )
+
+    def clear_owner(self, owner_id: int) -> None:
+        """清空指定用户的全部向量片段"""
+        self._client.delete(
+            collection_name=self.collection_name,
+            points_selector=qmodels.Filter(
+                must=[
+                    qmodels.FieldCondition(
+                        key="metadata.owner_id",
+                        match=qmodels.MatchValue(value=owner_id),
                     )
                 ]
             ),

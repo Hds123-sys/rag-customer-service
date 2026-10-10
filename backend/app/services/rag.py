@@ -151,16 +151,18 @@ class RAGService:
         self._rebuild_lexical_index()
         return ids
 
-    def delete_by_file_hash(self, file_hash: str) -> None:
+    def delete_document(self, owner_id: int, file_hash: str) -> None:
+        """删除指定用户某个文档的全部片段"""
         self.ensure_ready()
         assert self.vector_store is not None
-        self.vector_store.delete_by_file_hash(file_hash)
+        self.vector_store.delete_matching(owner_id, file_hash)
         self._rebuild_lexical_index()
 
-    def clear(self) -> None:
+    def clear_owner(self, owner_id: int) -> None:
+        """清空指定用户的知识库"""
         self.ensure_ready()
         assert self.vector_store is not None
-        self.vector_store.clear()
+        self.vector_store.clear_owner(owner_id)
         self._rebuild_lexical_index()
 
     # ==================== 检索 ====================
@@ -192,8 +194,10 @@ class RAGService:
                 scores[doc_id] = scores.get(doc_id, 0.0) + idf * (tf * (_BM25_K1 + 1)) / denominator
         return scores
 
-    def search(self, query: str, top_k: Optional[int] = None) -> List[dict]:
-        """混合检索: 向量相似度 + BM25 关键词"""
+    def search(
+        self, query: str, top_k: Optional[int] = None, owner_id: Optional[int] = None
+    ) -> List[dict]:
+        """混合检索: 向量相似度 + BM25 关键词(仅召回 owner_id 对应的文档)"""
         self.ensure_ready()
         assert self.embeddings is not None and self.vector_store is not None
 
@@ -216,8 +220,14 @@ class RAGService:
         with self._lock:
             documents = self._documents
             for doc_id in candidate_ids:
-                if doc_id not in documents:
+                document = documents.get(doc_id)
+                if not document:
                     continue
+                # 知识库按用户隔离: 只检索属于当前用户的文档
+                if owner_id is not None:
+                    metadata = document.get("metadata") or {}
+                    if metadata.get("owner_id") != owner_id:
+                        continue
                 vector_score = vector_scores.get(doc_id, 0.0)
                 keyword_score = (
                     keyword_scores.get(doc_id, 0.0) / max_keyword if max_keyword else 0.0
@@ -291,9 +301,14 @@ class RAGService:
         messages.append({"role": "user", "content": user_content})
         return self.llm.chat(messages)
 
-    def chat(self, query: str, history: Optional[List[dict]] = None) -> dict:
+    def chat(
+        self,
+        query: str,
+        history: Optional[List[dict]] = None,
+        owner_id: Optional[int] = None,
+    ) -> dict:
         self.ensure_ready()
-        results = self.search(query)
+        results = self.search(query, owner_id=owner_id)
         answer = self.generate_answer(query, results, history)
         sources = [
             {
@@ -308,10 +323,19 @@ class RAGService:
         return {"answer": answer, "sources": sources}
 
     # ==================== 状态 ====================
+    def count_owner(self, owner_id: int) -> int:
+        """统计指定用户的向量片段数量"""
+        with self._lock:
+            return sum(
+                1 for item in self._documents.values()
+                if (item.get("metadata") or {}).get("owner_id") == owner_id
+            )
+
     def stats(self) -> dict:
         return {
             "ready": self.ready,
-            "error": self.init_error,
+            # 只暴露状态, 具体异常写日志, 避免把内部细节返回给客户端
+            "error": "服务初始化失败, 请查看服务端日志" if self.init_error else None,
             "embedding_provider": settings.EMBEDDING_PROVIDER,
             "dimension": self.dimension,
             "vector_backend": self.vector_store.backend if self.vector_store else None,
