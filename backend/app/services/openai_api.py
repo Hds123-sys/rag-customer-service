@@ -40,6 +40,11 @@ class ChatClient:
         self.temperature = temperature
         self.timeout = timeout
         self.max_retries = max_retries
+        # 复用同一个 Client: 保持连接存活, 避免每次调用都重新做 TCP+TLS 握手
+        self._client = httpx.Client(
+            timeout=httpx.Timeout(connect=10.0, read=timeout, write=30.0, pool=10.0),
+            limits=httpx.Limits(max_connections=20, max_keepalive_connections=10),
+        )
 
     @property
     def endpoint(self) -> str:
@@ -81,10 +86,16 @@ class ChatClient:
             payload["max_tokens"] = max_tokens
 
         last_error: Optional[Exception] = None
+        started = time.perf_counter()
         for attempt in range(self.max_retries + 1):
+            attempt_started = time.perf_counter()
             try:
-                with httpx.Client(timeout=self.timeout) as client:
-                    response = client.post(self.endpoint, headers=self.headers, json=payload)
+                response = self._client.post(self.endpoint, headers=self.headers, json=payload)
+                elapsed = time.perf_counter() - attempt_started
+                logger.info(
+                    "大模型调用完成: %.2fs, HTTP %s, 共 %.2fs",
+                    elapsed, response.status_code, time.perf_counter() - started,
+                )
                 if response.status_code >= 400:
                     detail = self._extract_error(response)
                     raise RuntimeError(f"大模型接口返回 {response.status_code}: {detail}")
@@ -92,11 +103,21 @@ class ChatClient:
                 return self._extract_content(data)
             except (httpx.TransportError, httpx.TimeoutException) as exc:
                 last_error = exc
-                logger.warning("调用大模型失败(第 %s 次): %s", attempt + 1, exc)
+                logger.warning(
+                    "调用大模型失败(第 %s 次, 耗时 %.2fs): %s",
+                    attempt + 1, time.perf_counter() - attempt_started, exc,
+                )
                 if attempt < self.max_retries:
                     time.sleep(1.0 * (attempt + 1))
 
         raise RuntimeError(f"无法连接大模型服务: {last_error}")
+
+    def close(self) -> None:
+        """释放底层连接池"""
+        try:
+            self._client.close()
+        except Exception:  # noqa: BLE001
+            pass
 
     # ------------------------------------------------------------------
     @staticmethod

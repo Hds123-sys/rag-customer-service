@@ -29,7 +29,7 @@ router = APIRouter()
 
 
 @router.post("/register", response_model=TokenResponse, summary="用户注册")
-async def register(
+def register(
     request: UserRegisterRequest,
     http_request: Request,
     db: Session = Depends(get_db),
@@ -58,7 +58,7 @@ async def register(
 
 
 @router.post("/login", response_model=TokenResponse, summary="用户登录")
-async def login(
+def login(
     request: UserLoginRequest,
     http_request: Request,
     db: Session = Depends(get_db),
@@ -90,18 +90,18 @@ async def login(
 
 
 @router.post("/logout", response_model=MessageResponse, summary="退出登录")
-async def logout(current_user: User = Depends(get_current_user)):
+def logout(current_user: User = Depends(get_current_user)):
     # JWT 为无状态令牌, 客户端清除本地 Token 即可
     return MessageResponse(message="退出成功")
 
 
 @router.get("/me", response_model=UserResponse, summary="获取当前用户信息")
-async def get_current_user_info(current_user: User = Depends(get_current_user)):
+def get_current_user_info(current_user: User = Depends(get_current_user)):
     return auth_service.to_user_response(current_user)
 
 
 @router.post("/reset-password", response_model=PasswordResetResponse, summary="请求密码重置验证码")
-async def request_password_reset(
+def request_password_reset(
     request: PasswordResetRequest,
     http_request: Request,
     db: Session = Depends(get_db),
@@ -123,7 +123,7 @@ async def request_password_reset(
 
 
 @router.post("/reset-password/confirm", response_model=MessageResponse, summary="确认重置密码")
-async def confirm_password_reset(
+def confirm_password_reset(
     request: PasswordResetConfirm,
     http_request: Request,
     db: Session = Depends(get_db),

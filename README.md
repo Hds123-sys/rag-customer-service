@@ -24,7 +24,7 @@
 | 后端 | Python 3.11+ / FastAPI / SQLAlchemy / Pydantic v2 / httpx / PyMuPDF |
 | 检索 | 混合检索: 向量检索(qdrant-client, 可选) + BM25 关键词检索 |
 | 向量化 | 内置离线向量化(默认); 也可接入 OpenAI 兼容的 `/v1/embeddings` 接口 |
-| 大模型 | OpenAI 兼容接口(默认 `gpt-6-sol`) |
+| 大模型 | OpenAI 兼容接口(默认 `deepseek-v4-flash`) |
 | 存储 | SQLite(默认) / MySQL 8 |
 | 前端 | Vue 3 / Vite / Element Plus / Axios / Vue Router |
 | 部署 | Docker / Docker Compose / Nginx |
@@ -118,7 +118,8 @@ docker compose -f docker-compose.prod.yml up -d --build
 | --- | --- | --- |
 | `API_KEY` | 空 | 大模型服务密钥, **必填** |
 | `API_BASE_URL` | `https://token.uino.com/v1` | OpenAI 兼容接口地址 |
-| `API_MODEL` | `gpt-6-sol` | 对话模型名称 |
+| `API_MODEL` | `deepseek-v4-flash` | 对话模型名称 |
+| `API_TIMEOUT` / `API_MAX_RETRIES` | `120` / `2` | 单次调用读超时(秒)与失败重试次数 |
 | `EMBEDDING_PROVIDER` | `local` | `local` 内置离线向量化(零依赖) / `openai` 调用 embeddings 接口(语义效果更好) |
 | `EMBEDDING_DIM` | `1024` | 内置向量化的向量维度 |
 | `VECTOR_STORE_MODE` | `auto` | `auto` 优先 Qdrant 否则本地 / `local` 本地 / `qdrant` 强制 Qdrant |

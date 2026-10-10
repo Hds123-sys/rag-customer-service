@@ -68,10 +68,10 @@ async def upload_document(
     try:
         text = await document_service.parse_document(file_path, filename)
     except ValueError as exc:
-        await document_service.delete_path(file_path)
+        await run_in_threadpool(document_service.delete_path, file_path)
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     except Exception:  # noqa: BLE001
-        await document_service.delete_path(file_path)
+        await run_in_threadpool(document_service.delete_path, file_path)
         logger.exception("解析文档失败")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -88,14 +88,15 @@ async def upload_document(
     try:
         chunk_ids = await run_in_threadpool(rag_service.add_document, text, metadata)
     except Exception:  # noqa: BLE001
-        await document_service.delete_path(file_path)
+        await run_in_threadpool(document_service.delete_path, file_path)
         logger.exception("文档入库失败")
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="文档入库失败，请稍后重试",
         ) from None
 
-    record = document_service.register_document(
+    record = await run_in_threadpool(
+        document_service.register_document,
         doc_id=doc_id,
         owner_id=owner_id,
         file_hash=file_hash,
@@ -109,13 +110,13 @@ async def upload_document(
 
 @router.get("", response_model=List[DocumentResponse], summary="获取文档列表")
 @router.get("/", response_model=List[DocumentResponse], include_in_schema=False)
-async def list_documents(current_user: User = Depends(get_current_user)):
+def list_documents(current_user: User = Depends(get_current_user)):
     records = document_service.list_documents(int(current_user.id))
     return [_to_response(record) for record in records]
 
 
 @router.get("/stats", summary="知识库统计信息")
-async def knowledge_base_stats(current_user: User = Depends(get_current_user)):
+def knowledge_base_stats(current_user: User = Depends(get_current_user)):
     stats = rag_service.stats()
     stats["documents"] = document_service.count(int(current_user.id))
     stats["vector_points"] = rag_service.count_owner(int(current_user.id))
@@ -141,7 +142,7 @@ async def delete_document(document_id: str, current_user: User = Depends(get_cur
             detail="删除向量数据失败，请稍后重试",
         ) from None
 
-    await document_service.remove_document(document_id)
+    await run_in_threadpool(document_service.remove_document, document_id)
     return MessageResponse(message="文档删除成功")
 
 
@@ -156,5 +157,5 @@ async def clear_all_documents(current_user: User = Depends(get_current_user)):
             detail="清空向量库失败，请稍后重试",
         ) from None
 
-    await document_service.clear_all(int(current_user.id))
+    await run_in_threadpool(document_service.clear_all, int(current_user.id))
     return MessageResponse(message="所有文档已清空")

@@ -36,8 +36,10 @@ class Settings(BaseSettings):
     # ==================== 大模型配置(OpenAI 兼容接口) ====================
     API_BASE_URL: str = "https://token.uino.com/v1"
     API_KEY: str = ""
-    API_MODEL: str = "gpt-6-sol"
+    API_MODEL: str = "deepseek-v4-flash"
     API_TIMEOUT: float = 120.0
+    # 大模型调用失败后的重试次数(总请求数 = 1 + 重试次数)
+    API_MAX_RETRIES: int = 2
 
     # ==================== 向量化配置 ====================
     # local: 使用内置的离线向量化算法(无需外部服务)

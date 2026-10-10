@@ -21,6 +21,11 @@ logging.basicConfig(
     level=logging.DEBUG if settings.DEBUG else logging.INFO,
     format="%(asctime)s | %(levelname)-7s | %(name)s | %(message)s",
 )
+# 第三方 HTTP 库在 DEBUG 级别会把每次 TCP/TLS 连接、请求体都打出来,
+# 日志量极大且会拖慢写入, 统一压到 WARNING
+for _noisy_logger in ("httpcore", "httpx", "urllib3"):
+    logging.getLogger(_noisy_logger).setLevel(logging.WARNING)
+
 logger = logging.getLogger(__name__)
 
 

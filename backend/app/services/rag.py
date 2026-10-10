@@ -75,6 +75,7 @@ class RAGService:
                 model=settings.API_MODEL,
                 temperature=settings.TEMPERATURE,
                 timeout=settings.API_TIMEOUT,
+                max_retries=settings.API_MAX_RETRIES,
             )
             self._rebuild_lexical_index()
             self.ready = True
@@ -345,6 +346,8 @@ class RAGService:
         }
 
     def close(self) -> None:
+        if self.llm:
+            self.llm.close()
         if self.vector_store:
             self.vector_store.close()
 

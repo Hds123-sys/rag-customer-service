@@ -97,8 +97,8 @@ class DocumentService:
         """文档 ID 由 上传用户 + 内容哈希 组成, 保证用户之间相互隔离"""
         return f"{int(owner_id)}:{file_hash}"
 
-    async def delete_path(self, file_path: Path) -> None:
-        """删除单个文件(用于上传流程失败时回滚)"""
+    def delete_path(self, file_path: Path) -> None:
+        """删除单个文件(用于上传流程失败时回滚)。同步阻塞, 调用方应放入线程池。"""
         try:
             if file_path.is_file() and file_path.name != _METADATA_FILENAME:
                 file_path.unlink()
@@ -204,7 +204,7 @@ class DocumentService:
                 if int(item.get("owner_id", -1)) == int(owner_id)
             )
 
-    async def delete_file(self, doc_id: str) -> bool:
+    def delete_file(self, doc_id: str) -> bool:
         record = self.get_document(doc_id)
         candidates = []
         if record and record.get("stored_name"):
@@ -220,14 +220,15 @@ class DocumentService:
                 logger.warning("删除文件失败 %s: %s", file_path, exc)
         return deleted
 
-    async def remove_document(self, doc_id: str) -> bool:
-        """删除文件与元数据记录"""
+    def remove_document(self, doc_id: str) -> bool:
+        """删除文件与元数据记录。同步阻塞, 调用方应放入线程池。"""
         existed = self.get_document(doc_id) is not None
-        await self.delete_file(doc_id)
+        self.delete_file(doc_id)
         self._pop_record(doc_id)
         return existed
 
-    async def clear_all(self, owner_id: int) -> None:
+    def clear_all(self, owner_id: int) -> None:
+        """清空某用户的文档与文件。同步阻塞, 调用方应放入线程池。"""
         import shutil
 
         with self._lock:
