@@ -1,4 +1,3 @@
-version: '3.8'
 
 services:
   mysql:
@@ -46,9 +45,9 @@ services:
       - ./backend/data:/app/data
     environment:
       - DEBUG=${DEBUG:-False}
-      - API_BASE_URL=${API_BASE_URL:-https://apihub.agnes-ai.com}
+      - API_BASE_URL=${API_BASE_URL:-https://token.uino.com/v1}
       - API_KEY=${API_KEY:-}
-      - API_MODEL=${API_MODEL:-agnes-2.5-flash}
+      - API_MODEL=${API_MODEL:-deepseek-v4-flash}
       - EMBEDDING_PROVIDER=${EMBEDDING_PROVIDER:-local}
       - VECTOR_STORE_MODE=qdrant
       - QDRANT_HOST=qdrant
