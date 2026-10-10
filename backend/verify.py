@@ -7,7 +7,7 @@
     #    可选参数:    python verify.py --base-url http://127.0.0.1:8000
 
 脚本会依次验证: 注册/登录/鉴权 -> 文档上传(去重/校验/PDF/MD) -> 混合检索问答
--> 会话历史 -> 删除 -> 清空 -> 密码重置, 并输出 PASS/FAIL 汇总。
+-> 会话历史 -> 密码重置 -> 删除 -> 清空 -> 用户隔离与限流, 并输出 PASS/FAIL 汇总。
 """
 import argparse
 import random
@@ -217,6 +217,69 @@ def main() -> int:
         after_stats = client.get("/api/documents/stats", headers=auth)
         check("清空后向量库为空", after_stats.status_code == 200 and after_stats.json().get("vector_points") == 0,
               f"points={after_stats.json().get('vector_points') if after_stats.status_code == 200 else '-'}")
+
+        # ---------------- 用户隔离与限流 ----------------
+        print("\n[7] 用户隔离与限流")
+
+        # 用户1 重新上传一个文档, 用于越权测试
+        isolation_text = (
+            "会员权益说明\n"
+            "1. 普通会员每单可享受 1% 的积分返利。\n"
+            "2. 黄金会员每单可享受 3% 的积分返利, 且免运费。\n"
+        )
+        iso_upload = client.post("/api/documents/upload", headers=auth,
+                                 files={"file": ("member_rule.txt", isolation_text.encode("utf-8"), "text/plain")})
+        check("用户1 重新上传文档成功", iso_upload.status_code == 200, iso_upload.text[:120])
+        iso_doc_id = iso_upload.json().get("id", "") if iso_upload.status_code == 200 else ""
+
+        # 用户2 注册
+        other_username = random_name("verify2")
+        other_email = f"{other_username}@example.com"
+        other_reg = client.post("/api/auth/register",
+                                json={"username": other_username, "email": other_email, "password": password})
+        check("用户2 注册成功", other_reg.status_code == 200, other_reg.text[:120])
+        other_token = other_reg.json().get("access_token", "") if other_reg.status_code == 200 else ""
+        other_auth = {"Authorization": f"Bearer {other_token}"} if other_token else auth
+
+        other_docs = client.get("/api/documents", headers=other_auth)
+        check("文档列表按用户隔离", other_docs.status_code == 200 and len(other_docs.json()) == 0,
+              f"count={len(other_docs.json()) if other_docs.status_code == 200 else '-'}")
+
+        other_stats = client.get("/api/documents/stats", headers=other_auth)
+        check("知识库统计按用户隔离",
+              other_stats.status_code == 200 and other_stats.json().get("documents") == 0,
+              f"documents={other_stats.json().get('documents') if other_stats.status_code == 200 else '-'}")
+
+        if iso_doc_id:
+            cross_get = client.delete(f"/api/documents/{iso_doc_id}", headers=other_auth)
+            check("用户2 无法删除用户1 的文档(404)", cross_get.status_code == 404, str(cross_get.status_code))
+
+        # 用户1 建一个会话, 用户2 不应能读写
+        iso_session = f"verify-iso-{int(time.time())}"
+        client.post("/api/chat", headers=auth, json={"message": "会员返利是多少？", "session_id": iso_session})
+
+        hijack = client.post("/api/chat", headers=other_auth,
+                             json={"message": "你好", "session_id": iso_session})
+        check("用户2 使用他人会话ID 时被分配新会话",
+              hijack.status_code in (200, 503) and hijack.json().get("session_id") != iso_session,
+              str(hijack.json().get("session_id"))[:60] if hijack.status_code in (200, 503) else hijack.text[:80])
+
+        other_history = client.get(f"/api/chat/history/{iso_session}", headers=other_auth)
+        check("用户2 无法读取用户1 的会话历史",
+              other_history.status_code == 200 and len(other_history.json().get("history", [])) == 0)
+
+        other_clear = client.delete(f"/api/chat/history/{iso_session}", headers=other_auth)
+        owner_history = client.get(f"/api/chat/history/{iso_session}", headers=auth)
+        check("用户2 无法清空用户1 的会话历史",
+              other_clear.status_code == 200 and len(owner_history.json().get("history", [])) >= 1,
+              f"owner_history={len(owner_history.json().get('history', []))}")
+
+        # 限流: 使用未注册邮箱探测, 不影响其他用例
+        probe_email = f"probe_{random_name('x')}@example.com"
+        last_status = None
+        for _ in range(12):
+            last_status = client.post("/api/auth/reset-password", json={"email": probe_email}).status_code
+        check("重复请求验证码触发限流(429)", last_status == 429, f"last={last_status}")
 
     print("\n" + "=" * 56)
     print(f"通过 {len(PASSED)} 项, 失败 {len(FAILED)} 项, 警告 {len(WARNED)} 项")
