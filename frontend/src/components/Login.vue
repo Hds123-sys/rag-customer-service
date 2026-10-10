@@ -131,8 +131,9 @@ const handleLogin = async () => {
   loading.value = true
   try {
     const response = await auth.login({ ...loginData })
-    auth.setToken(response.access_token)
-    auth.setUserInfo(response.user)
+    // 勾选「记住我」= localStorage, 否则 = sessionStorage
+    auth.setToken(response.access_token, rememberMe.value)
+    auth.setUserInfo(response.user, rememberMe.value)
     ElMessage.success('登录成功')
     const redirect = router.currentRoute.value.query?.redirect
     router.push(typeof redirect === 'string' && redirect ? redirect : '/')

@@ -165,7 +165,28 @@ async function loadStats() {
   }
 }
 
-onMounted(loadStats)
+onMounted(async () => {
+  await Promise.all([loadStats(), restoreHistory()])
+})
+
+// 刷新页面后从服务端恢复本轮会话历史, 避免"对话凭空消失"
+async function restoreHistory() {
+  if (!authState.token) return
+  try {
+    const { data } = await chatAPI.getHistory(sessionId.value)
+    const history = Array.isArray(data?.history) ? data.history : []
+    if (!history.length) return
+    messages.value = history
+      .filter((item) => item && typeof item.content === 'string' && item.content)
+      .map((item) =>
+        buildMessage(item.role === 'user' ? 'user' : 'assistant', item.content, {
+          sources: Array.isArray(item.sources) ? item.sources : [],
+        })
+      )
+  } catch (error) {
+    // 历史恢复失败不影响新的提问
+  }
+}
 
 async function handleSend() {
   if (loading.value) return

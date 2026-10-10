@@ -1,46 +1,89 @@
 /**
  * 全局登录状态(响应式)
  *
- * 通过 localStorage 持久化, 并提供响应式状态供组件使用。
+ * 持久化策略:
+ * - 登录时勾选「记住我」: 写入 localStorage, 关闭浏览器后仍然保持登录
+ * - 未勾选: 写入 sessionStorage, 关闭标签页后自动失效
+ *
+ * 读取时优先 sessionStorage, 再回退 localStorage, 两种方式都能恢复登录态。
  */
 import { reactive } from 'vue'
 
 const TOKEN_KEY = 'access_token'
 const USER_KEY = 'user_info'
 
-function readUser() {
+function safeGet(storage, key) {
   try {
-    const raw = localStorage.getItem(USER_KEY)
-    return raw ? JSON.parse(raw) : null
+    return storage.getItem(key)
+  } catch (error) {
+    return null
+  }
+}
+
+function safeSet(storage, key, value) {
+  try {
+    storage.setItem(key, value)
+  } catch (error) {
+    /* 隐私模式/存储已满时忽略, 不影响本次会话使用 */
+  }
+}
+
+function safeRemove(storage, key) {
+  try {
+    storage.removeItem(key)
+  } catch (error) {
+    /* 忽略 */
+  }
+}
+
+function readPersisted(key) {
+  const sessionValue = safeGet(sessionStorage, key)
+  return sessionValue !== null ? sessionValue : safeGet(localStorage, key)
+}
+
+function persist(key, value, persistent) {
+  if (value === null || value === undefined || value === '') {
+    safeRemove(localStorage, key)
+    safeRemove(sessionStorage, key)
+    return
+  }
+  if (persistent) {
+    safeSet(localStorage, key, value)
+    safeRemove(sessionStorage, key)
+  } else {
+    safeSet(sessionStorage, key, value)
+    safeRemove(localStorage, key)
+  }
+}
+
+function readUser() {
+  const raw = readPersisted(USER_KEY)
+  if (!raw) return null
+  try {
+    return JSON.parse(raw)
   } catch (error) {
     return null
   }
 }
 
 export const authState = reactive({
-  token: localStorage.getItem(TOKEN_KEY) || '',
+  token: readPersisted(TOKEN_KEY) || '',
   user: readUser(),
 })
 
-export function setSession(token, user) {
+export function setSession(token, user, persistent = true) {
   authState.token = token || ''
   authState.user = user || null
 
-  if (token) {
-    localStorage.setItem(TOKEN_KEY, token)
-  } else {
-    localStorage.removeItem(TOKEN_KEY)
-  }
-
-  if (user) {
-    localStorage.setItem(USER_KEY, JSON.stringify(user))
-  } else {
-    localStorage.removeItem(USER_KEY)
-  }
+  persist(TOKEN_KEY, token || null, persistent)
+  persist(USER_KEY, user ? JSON.stringify(user) : null, persistent)
 }
 
 export function clearSession() {
-  setSession('', null)
+  authState.token = ''
+  authState.user = null
+  persist(TOKEN_KEY, null, true)
+  persist(USER_KEY, null, true)
 }
 
 export function isAuthenticated() {

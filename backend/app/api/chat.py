@@ -59,13 +59,23 @@ def _get_history(session_id: str, user_id: int) -> List[dict]:
         return list(item["history"])
 
 
-def _append_history(session_id: str, user_id: int, role: str, content: str) -> None:
+def _append_history(
+    session_id: str,
+    user_id: int,
+    role: str,
+    content: str,
+    sources: Optional[List[dict]] = None,
+) -> None:
     with _sessions_lock:
         item = _sessions.get(session_id)
         if not item or item.get("user_id") != user_id:
             item = {"user_id": user_id, "history": [], "updated_at": time.time()}
             _sessions[session_id] = item
-        item["history"].append({"role": role, "content": content})
+        entry: dict = {"role": role, "content": content}
+        if sources:
+            # 一并保存来源, 便于前端刷新后仍能展示「参考来源」
+            entry["sources"] = sources
+        item["history"].append(entry)
         if len(item["history"]) > _MAX_HISTORY_ITEMS:
             item["history"] = item["history"][-_MAX_HISTORY_ITEMS:]
         item["updated_at"] = time.time()
@@ -122,7 +132,13 @@ def chat(
         ) from None
 
     _append_history(session_id, current_user.id, "user", request.message)
-    _append_history(session_id, current_user.id, "assistant", result["answer"])
+    _append_history(
+        session_id,
+        current_user.id,
+        "assistant",
+        result["answer"],
+        result.get("sources", []),
+    )
 
     return ChatResponse(
         answer=result["answer"],

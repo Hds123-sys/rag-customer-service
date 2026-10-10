@@ -61,9 +61,9 @@
         <el-form-item>
           <div class="terms">
             <el-checkbox v-model="agreeTerms">我已阅读并同意</el-checkbox>
-            <el-link type="primary" underline="never">用户协议</el-link>
+            <el-link type="primary" underline="never" @click="openAgreement('terms')">用户协议</el-link>
             <span>和</span>
-            <el-link type="primary" underline="never">隐私政策</el-link>
+            <el-link type="primary" underline="never" @click="openAgreement('privacy')">隐私政策</el-link>
           </div>
         </el-form-item>
 
@@ -86,6 +86,15 @@
         <el-link type="primary" @click="$router.push('/login')">立即登录</el-link>
       </div>
     </div>
+
+    <el-dialog v-model="agreementVisible" :title="agreementTitle" width="560px">
+      <div class="agreement-body">
+        <p v-for="(paragraph, index) in agreementParagraphs" :key="index">{{ paragraph }}</p>
+      </div>
+      <template #footer>
+        <el-button type="primary" @click="agreementVisible = false">我知道了</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -158,6 +167,43 @@ const registerRules = {
       trigger: 'blur',
     },
   ],
+}
+
+const agreementVisible = ref(false)
+const agreementType = ref('terms')
+
+const AGREEMENTS = {
+  terms: {
+    title: '用户协议',
+    paragraphs: [
+      '欢迎使用智能客服RAG系统(以下简称「本系统」)。在使用本系统前, 请您仔细阅读并充分理解本协议。',
+      '一、服务内容: 本系统提供文档上传、知识库管理与基于知识库的智能问答服务。',
+      '二、账号安全: 请您妥善保管账号与密码, 因账号泄露造成的损失由您自行承担。',
+      '三、使用规范: 您不得上传违法违规、侵犯他人合法权益的内容, 不得利用本系统从事任何违法活动。',
+      '四、内容归属: 您上传的文档归您所有, 本系统仅用于为您提供问答服务, 不作其他用途。',
+      '五、服务变更: 本系统可能因升级、维护等原因调整或暂停服务, 我们会尽量提前告知。',
+    ],
+  },
+  privacy: {
+    title: '隐私政策',
+    paragraphs: [
+      '我们非常重视您的个人信息保护。本政策说明我们如何收集、使用与保护您的信息。',
+      '一、收集范围: 我们仅收集注册所需的用户名、邮箱, 以及您主动上传的文档内容。',
+      '二、使用目的: 上述信息仅用于账号登录、知识库检索与智能问答, 不作其他用途。',
+      '三、存储方式: 您的密码经加密后存储, 我们不会以明文形式保存或展示您的密码。',
+      '四、数据隔离: 您上传的文档与对话记录仅您本人可见, 其他用户无法检索到您的资料。',
+      '五、信息共享: 除法律法规要求外, 我们不会向任何第三方出售或提供您的个人信息。',
+      '六、您的权利: 您可以随时删除已上传的文档、清空对话记录, 或申请注销账号。',
+    ],
+  },
+}
+
+const agreementTitle = computed(() => AGREEMENTS[agreementType.value].title)
+const agreementParagraphs = computed(() => AGREEMENTS[agreementType.value].paragraphs)
+
+const openAgreement = (type) => {
+  agreementType.value = type
+  agreementVisible.value = true
 }
 
 const handleRegister = async () => {
@@ -304,5 +350,11 @@ const handleRegister = async () => {
 
 .auth-footer .el-link {
   margin-left: 5px;
+}
+.agreement-body p {
+  margin: 0 0 10px;
+  font-size: 13px;
+  line-height: 1.8;
+  color: #606266;
 }
 </style>

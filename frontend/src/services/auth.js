@@ -49,8 +49,10 @@ export default {
   resetPasswordConfirm: (payload) => authAPI.post('/reset-password/confirm', payload),
 
   // ---- 登录状态管理 ----
-  setToken: (token) => setSession(token, authState.user),
-  setUserInfo: (user) => setSession(authState.token, user),
+  // persistent=false 时使用 sessionStorage(关闭标签页即失效), 对应「记住我」未勾选
+  setSession: (token, user, persistent = true) => setSession(token, user, persistent),
+  setToken: (token, persistent = true) => setSession(token, authState.user, persistent),
+  setUserInfo: (user, persistent = true) => setSession(authState.token, user, persistent),
   getUserInfo: () => authState.user,
   getToken: () => authState.token,
   removeToken: clearSession,

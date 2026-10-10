@@ -11,7 +11,7 @@
             </el-tag>
           </div>
           <div class="doc-header-right">
-            <el-button :icon="Refresh" size="small" :loading="loading" @click="fetchDocuments">刷新</el-button>
+            <el-button :icon="Refresh" size="small" :loading="loading" @click="refreshAll">刷新</el-button>
             <el-popconfirm
               title="确定要清空所有文档吗？此操作不可恢复。"
               :disabled="documents.length === 0"
@@ -138,6 +138,11 @@ async function fetchDocuments() {
   } finally {
     loading.value = false
   }
+}
+
+// 刷新按钮: 列表与统计一起刷新, 避免"向量片段"数字停留在旧值
+async function refreshAll() {
+  await Promise.all([fetchDocuments(), fetchStats()])
 }
 
 async function fetchStats() {
