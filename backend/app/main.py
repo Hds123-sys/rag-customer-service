@@ -24,9 +24,22 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+def _warn_insecure_settings() -> None:
+    """启动时提示不安全的默认配置, 避免把开发配置直接带上生产环境"""
+    if settings.DEBUG:
+        logger.warning(
+            "DEBUG=True: 找回密码接口会直接返回验证码(dev_code), 仅供开发自测; 上线前请设为 False"
+        )
+    if "*" in settings.cors_origins:
+        logger.warning("CORS_ORIGINS=*: 允许任意来源跨域访问, 上线前请收紧为实际前端域名")
+    if not settings.SECRET_KEY or "change" in settings.SECRET_KEY.lower():
+        logger.warning("SECRET_KEY 仍为示例值, 上线前请更换为强随机密钥")
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     # 启动: 初始化数据库表、上传目录
+    _warn_insecure_settings()
     init_db()
     document_service.touch()
     logger.info("%s v%s 启动完成", settings.APP_NAME, settings.APP_VERSION)
