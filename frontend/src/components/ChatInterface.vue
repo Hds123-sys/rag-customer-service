@@ -140,9 +140,9 @@ const messageListRef = ref(null)
 const bottomRef = ref(null)
 
 let messageSeq = 0
-function buildMessage(role, content, extra = {}) {
+function buildMessage(role, content, extra = {}, timestamp) {
   messageSeq += 1
-  return { id: `${Date.now()}_${messageSeq}`, role, content, timestamp: Date.now(), ...extra }
+  return { id: `${Date.now()}_${messageSeq}`, role, content, timestamp: timestamp ?? Date.now(), ...extra }
 }
 
 function scrollToBottom() {
@@ -179,9 +179,12 @@ async function restoreHistory() {
     messages.value = history
       .filter((item) => item && typeof item.content === 'string' && item.content)
       .map((item) =>
-        buildMessage(item.role === 'user' ? 'user' : 'assistant', item.content, {
-          sources: Array.isArray(item.sources) ? item.sources : [],
-        })
+        buildMessage(
+          item.role === 'user' ? 'user' : 'assistant',
+          item.content,
+          { sources: Array.isArray(item.sources) ? item.sources : [] },
+          item.ts ? item.ts * 1000 : undefined,
+        )
       )
   } catch (error) {
     // 历史恢复失败不影响新的提问

@@ -65,13 +65,14 @@ def _append_history(
     role: str,
     content: str,
     sources: Optional[List[dict]] = None,
+    ts: Optional[float] = None,
 ) -> None:
     with _sessions_lock:
         item = _sessions.get(session_id)
         if not item or item.get("user_id") != user_id:
             item = {"user_id": user_id, "history": [], "updated_at": time.time()}
             _sessions[session_id] = item
-        entry: dict = {"role": role, "content": content}
+        entry: dict = {"role": role, "content": content, "ts": ts if ts is not None else time.time()}
         if sources:
             # 一并保存来源, 便于前端刷新后仍能展示「参考来源」
             entry["sources"] = sources
@@ -100,6 +101,7 @@ def chat(
     _prune_sessions()
     enforce(http_request, "chat:ask", settings.RATE_LIMIT_CHAT, identifier=str(current_user.id))
 
+    asked_at = time.time()
     session_id = (request.session_id or "").strip() or str(uuid.uuid4())
     owner = _session_owner(session_id)
     if owner is not None and owner != current_user.id:
@@ -131,7 +133,7 @@ def chat(
             detail="问答失败，请稍后重试",
         ) from None
 
-    _append_history(session_id, current_user.id, "user", request.message)
+    _append_history(session_id, current_user.id, "user", request.message, ts=asked_at)
     _append_history(
         session_id,
         current_user.id,
