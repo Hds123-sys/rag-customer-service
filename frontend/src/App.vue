@@ -1,5 +1,5 @@
 <template>
-  <el-container v-if="authenticated" class="app-shell">
+  <el-container v-if="authenticated" class="app-shell" direction="vertical">
     <AppHeader />
 
     <el-container class="app-body">
@@ -59,5 +59,21 @@ const activeMenu = computed(() => (route.path === '/documents' ? '/documents' : 
   padding: 0;
   background: #f5f7fa;
   overflow: hidden;
+}
+
+/* 窄窗口(例如内置浏览器侧栏)下把侧边栏收成图标, 把宽度让给内容区 */
+@media (max-width: 820px) {
+  .app-aside {
+    width: 64px !important;
+  }
+
+  :deep(.app-menu .el-menu-item) {
+    padding-left: 20px !important;
+    padding-right: 20px !important;
+  }
+
+  :deep(.app-menu .el-menu-item span) {
+    display: none;
+  }
 }
 </style>
