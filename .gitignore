@@ -1,0 +1,14 @@
+uploads/
+dist/
+node_modules/
+__pycache__/
+*.pyc
+.env
+*.log
+.DS_Store
+data/
+qdrant_data/
+.venv/
+venv/
+rag_system.db
+*.db
