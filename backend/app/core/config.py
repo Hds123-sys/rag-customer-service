@@ -68,6 +68,9 @@ class Settings(BaseSettings):
     VECTOR_WEIGHT: float = 0.6
     KEYWORD_WEIGHT: float = 0.4
     MIN_SCORE: float = 0.05
+    # 相关度下限: Top1 融合分低于该值时, 判定为"知识库中没有相关内容"直接拒答,
+    # 而不是把弱相关片段塞给模型硬答(抑制幻觉)。实测正例 >= 0.70, 负例 <= 0.27。
+    MIN_TOP_SCORE: float = 0.35
 
     # ==================== 文件上传配置 ====================
     UPLOAD_DIR: str = "uploads"

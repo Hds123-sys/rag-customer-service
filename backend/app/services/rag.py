@@ -252,7 +252,11 @@ class RAGService:
                 fused.append((doc_id, score, vector_score, keyword_score))
 
         fused.sort(key=lambda item: item[1], reverse=True)
-        fused = [item for item in fused if item[1] >= settings.MIN_SCORE][:top_k]
+        fused = [item for item in fused if item[1] >= settings.MIN_SCORE]
+        # 相关度下限: 最高分都不达标时判定为"没有相关内容", 返回空让上层走拒答分支
+        if not fused or fused[0][1] < settings.MIN_TOP_SCORE:
+            return []
+        fused = fused[:top_k]
 
         results = []
         with self._lock:
