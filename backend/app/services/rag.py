@@ -8,7 +8,7 @@ import math
 import threading
 import uuid
 from collections import Counter
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 from app.core.config import settings
 from app.services.embeddings import BaseEmbeddings, build_embeddings
@@ -127,26 +127,38 @@ class RAGService:
     # ==================== 写入 ====================
     def add_document(self, text: str, metadata: dict) -> List[str]:
         """切分、向量化并写入文档, 返回片段ID列表"""
+        return self.add_document_pages([(None, text)], metadata)
+
+    def add_document_pages(
+        self, pages: List[Tuple[Optional[int], str]], metadata: dict
+    ) -> List[str]:
+        """
+        按页切分、向量化并写入文档, 返回片段ID列表。
+        片段不跨页, 因此每块都能精确对应一个页码(page), 便于检索结果回溯原文位置。
+        """
         self.ensure_ready()
         assert self.embeddings is not None and self.vector_store is not None
 
-        chunks = self.splitter.split_text(text)
-        if not chunks:
+        per_chunk: List[Tuple[Optional[int], str]] = []
+        for page_number, page_text in pages:
+            if not page_text or not page_text.strip():
+                continue
+            for chunk in self.splitter.split_text(page_text):
+                per_chunk.append((page_number, chunk))
+
+        if not per_chunk:
             raise ValueError("文档内容为空，无法切分")
 
+        chunks = [chunk for _, chunk in per_chunk]
         vectors = self.embeddings.embed_documents(chunks)
         ids = [str(uuid.uuid4()) for _ in chunks]
-        payloads = []
         total = len(chunks)
-        for index, (chunk, _vector) in enumerate(zip(chunks, vectors)):
-            payloads.append({
-                "text": chunk,
-                "metadata": {
-                    **metadata,
-                    "chunk_index": index,
-                    "chunk_total": total,
-                },
-            })
+        payloads = []
+        for index, (page_number, chunk) in enumerate(per_chunk):
+            chunk_metadata = {**metadata, "chunk_index": index, "chunk_total": total}
+            if page_number is not None:
+                chunk_metadata["page"] = int(page_number)
+            payloads.append({"text": chunk, "metadata": chunk_metadata})
 
         self.vector_store.upsert(ids, vectors, payloads)
         self._rebuild_lexical_index()
@@ -254,6 +266,7 @@ class RAGService:
                     "vector_score": round(float(vector_score), 4),
                     "keyword_score": round(float(keyword_score), 4),
                     "filename": metadata.get("source", ""),
+                    "page": metadata.get("page"),
                     "chunk_index": int(metadata.get("chunk_index", 0)),
                     "text": clean_preview(document.get("text", ""), 300),
                     "full_text": document.get("text", ""),
@@ -317,6 +330,7 @@ class RAGService:
                 "score": item["score"],
                 "filename": item.get("filename", ""),
                 "text": item.get("text", ""),
+                "page": item.get("page"),
                 "chunk_index": item.get("chunk_index", 0),
             }
             for item in results

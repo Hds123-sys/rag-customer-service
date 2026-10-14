@@ -66,7 +66,7 @@ async def upload_document(
         return _to_response(existing)
 
     try:
-        text = await document_service.parse_document(file_path, filename)
+        pages = await document_service.parse_document_pages(file_path, filename)
     except ValueError as exc:
         await run_in_threadpool(document_service.delete_path, file_path)
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
@@ -86,7 +86,7 @@ async def upload_document(
     }
 
     try:
-        chunk_ids = await run_in_threadpool(rag_service.add_document, text, metadata)
+        chunk_ids = await run_in_threadpool(rag_service.add_document_pages, pages, metadata)
     except Exception:  # noqa: BLE001
         await run_in_threadpool(document_service.delete_path, file_path)
         logger.exception("文档入库失败")

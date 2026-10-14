@@ -119,17 +119,23 @@ class DocumentService:
         return file_path, file_hash
 
     # ==================== 解析 ====================
-    async def parse_pdf(self, file_path: Path) -> str:
-        def _read() -> str:
-            parts = []
+    async def parse_pdf_pages(self, file_path: Path) -> List[Tuple[int, str]]:
+        """按页解析 PDF, 返回 [(页码, 文本), ...], 页码从 1 开始"""
+
+        def _read() -> List[Tuple[int, str]]:
+            pages: List[Tuple[int, str]] = []
             with pymupdf.open(file_path) as document:
-                for page in document:
-                    parts.append(page.get_text())
-            return "\n".join(parts)
+                for number, page in enumerate(document, start=1):
+                    pages.append((number, page.get_text()))
+            return pages
 
         import asyncio
 
         return await asyncio.to_thread(_read)
+
+    async def parse_pdf(self, file_path: Path) -> str:
+        pages = await self.parse_pdf_pages(file_path)
+        return "\n".join(text for _, text in pages)
 
     async def parse_txt(self, file_path: Path) -> str:
         for encoding in ("utf-8", "utf-8-sig", "gb18030", "latin-1"):
@@ -142,18 +148,27 @@ class DocumentService:
         async with aiofiles.open(file_path, "r", encoding="utf-8", errors="ignore") as fp:
             return await fp.read()
 
-    async def parse_document(self, file_path: Path, filename: str) -> str:
+    async def parse_document_pages(
+        self, file_path: Path, filename: str
+    ) -> List[Tuple[Optional[int], str]]:
+        """
+        解析文档并保留页码: PDF 返回 [(页码, 文本), ...]; TXT/MD 无页概念, 返回 [(None, 文本)]。
+        """
         extension = self._get_file_extension(filename)
         if extension == ".pdf":
-            text = await self.parse_pdf(file_path)
+            pages: List[Tuple[Optional[int], str]] = list(await self.parse_pdf_pages(file_path))
         elif extension in (".txt", ".md"):
-            text = await self.parse_txt(file_path)
+            pages = [(None, await self.parse_txt(file_path))]
         else:
             raise ValueError(f"不支持的文件格式: {extension}")
 
-        if not text or not text.strip():
+        if not any(text and text.strip() for _, text in pages):
             raise ValueError("文档解析结果为空，请确认文件内容")
-        return text
+        return pages
+
+    async def parse_document(self, file_path: Path, filename: str) -> str:
+        pages = await self.parse_document_pages(file_path, filename)
+        return "\n".join(text for _, text in pages)
 
     # ==================== 记录管理 ====================
     def register_document(

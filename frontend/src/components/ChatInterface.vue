@@ -69,12 +69,12 @@
               >
                 <template #reference>
                   <el-tag type="primary" effect="plain" size="small" class="source-tag">
-                    {{ source.filename || '文档片段' }} · 相似度 {{ (source.score * 100).toFixed(1) }}%
+                    {{ source.filename || '文档片段' }}<template v-if="source.page"> · 第 {{ source.page }} 页</template> · 相似度 {{ (source.score * 100).toFixed(1) }}%
                   </el-tag>
                 </template>
                 <div class="source-popover">
                   <div class="source-popover-title">
-                    {{ source.filename || '文档片段' }} (片段 #{{ (source.chunk_index || 0) + 1 }})
+                    {{ source.filename || '文档片段' }}<template v-if="source.page"> 第 {{ source.page }} 页</template> (片段 #{{ (source.chunk_index || 0) + 1 }})
                   </div>
                   <div class="source-popover-text">{{ source.text }}</div>
                   <el-button text type="primary" size="small" @click="handleCopy(source.text)">复制片段</el-button>

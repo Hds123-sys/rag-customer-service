@@ -36,6 +36,7 @@ class SourceItem(BaseModel):
     score: float
     filename: str = ""
     text: str = ""
+    page: Optional[int] = None
     chunk_index: int = 0
 
 
